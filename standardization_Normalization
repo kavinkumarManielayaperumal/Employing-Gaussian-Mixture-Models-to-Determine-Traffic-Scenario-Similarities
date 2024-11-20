@@ -1,0 +1,24 @@
+import pandas as pd
+
+# Load the dataset
+file_path = r'C:\Users\superior\Downloads\data\01_tracks.csv'
+data = pd.read_csv(file_path)
+
+# Columns to standardize
+columns_to_standardize = ['x', 'y','xVelocity', 'yVelocity', 'xAcceleration', 'yAcceleration']
+
+
+# Compute mean and standard deviation for the selected columns
+mean_std = data[columns_to_standardize].agg(['mean', 'std'])
+
+# Standardize the selected columns using Z-score formula
+data_standardized = data.copy()
+for col in columns_to_standardize:
+    data_standardized[col] = (data[col] - mean_std.loc['mean', col]) / mean_std.loc['std', col]
+
+# Print the first few rows of the standardized dataset
+print(data_standardized.head())
+
+# Optional: Save the standardized dataset to a new CSV file
+data_standardized.to_csv(r'C:\Users\superior\Downloads\01_tracks_standardized.csv', index=False)
+
