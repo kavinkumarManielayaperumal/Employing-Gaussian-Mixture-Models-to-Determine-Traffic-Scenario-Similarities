@@ -1,0 +1,90 @@
+import pandas as pd
+import os
+
+
+def save_to_csv(X_data, y_data, data_type='train', save_directory='output'):
+    # Ensure 'laneChangeType' is included in X_data for calculations
+    X_data['laneChangeType'] = y_data
+
+    # Check required columns
+    required_columns = ['Latent_Feature_1', 'Latent_Feature_2']
+    if not all(col in X_data.columns for col in required_columns):
+        raise ValueError(
+            f"Missing columns: {', '.join([col for col in required_columns if col not in X_data.columns])}")
+
+    # Handle missing values in y_data
+    print(f"y_data type: {type(y_data)}")
+    print(f"y_data: {y_data.head()}")
+
+    if isinstance(y_data, pd.Series):
+        if y_data.isnull().any():
+            raise ValueError("y_data contains NaN values, which are not expected.")
+    else:
+        raise ValueError("y_data is not a pandas Series.")
+
+    # Step 1: Calculate mean and covariance for each laneChangeType
+    feature_columns = ['Latent_Feature_1', 'Latent_Feature_2']
+    mean_cov_dict = {}
+    for label in y_data.unique():
+        subset = X_data[X_data['laneChangeType'] == label][feature_columns]
+        mean_cov_dict[label] = {
+            'mean': subset.mean().to_dict(),
+            'covariance': subset.cov().to_dict()
+        }
+
+    # Step 2: Assign the mean values to all data points based on laneChangeType
+    X_data['Y_Latent_Feature_1'] = X_data['laneChangeType'].map(
+        lambda x: mean_cov_dict[x]['mean']['Latent_Feature_1'])
+    X_data['Y_Latent_Feature_2'] = X_data['laneChangeType'].map(
+        lambda x: mean_cov_dict[x]['mean']['Latent_Feature_2'])
+
+    # Step 3: Assign covariance values to the data points
+    X_data['Cov_Latent_Feature_1_Latent_Feature_2'] = X_data['laneChangeType'].map(
+        lambda x: mean_cov_dict[x]['covariance']['Latent_Feature_1']['Latent_Feature_2'])
+    X_data['Cov_Latent_Feature_1_Latent_Feature_1'] = X_data['laneChangeType'].map(
+        lambda x: mean_cov_dict[x]['covariance']['Latent_Feature_1']['Latent_Feature_1'])
+    X_data['Cov_Latent_Feature_2_Latent_Feature_2'] = X_data['laneChangeType'].map(
+        lambda x: mean_cov_dict[x]['covariance']['Latent_Feature_2']['Latent_Feature_2'])
+
+    # Remove `laneChangeType` column from the features before saving
+    X_data.drop(columns=['laneChangeType'], inplace=True)
+
+    # Save features and labels to CSV
+    features_path = os.path.join(save_directory, f'{data_type}_features.csv')
+    X_data.to_csv(features_path, index=False)
+    print(f"Saved {data_type} features to {features_path}")
+
+    # Create the labels DataFrame and save
+    label_columns = [
+        'Y_Latent_Feature_1', 'Y_Latent_Feature_2',
+        'Cov_Latent_Feature_1_Latent_Feature_2', 'Cov_Latent_Feature_1_Latent_Feature_1',
+        'Cov_Latent_Feature_2_Latent_Feature_2'
+    ]
+    labels_df = X_data[label_columns]
+    labels_path = os.path.join(save_directory, f'{data_type}_labels.csv')
+    labels_df.to_csv(labels_path, index=False)
+    print(f"Saved {data_type} labels to {labels_path}")
+    print(f"Columns in {labels_path}: {labels_df.columns.tolist()}")
+    print(f"Number of rows in {labels_path}: {len(labels_df)}")
+
+
+# Ensure directory exists
+save_directory = 'data_splits_mC'
+if not os.path.exists(save_directory):
+    os.makedirs(save_directory)
+
+# Load the saved data
+X_train = pd.read_csv(os.path.join(save_directory, 'X_train_balanced.csv'))
+y_train = pd.read_csv(os.path.join(save_directory, 'y_train_balanced.csv'))['laneChangeType']  # Extract the column as Series
+X_val = pd.read_csv(os.path.join(save_directory, 'X_val_balanced.csv'))
+y_val = pd.read_csv(os.path.join(save_directory, 'y_val_balanced.csv'))['laneChangeType']  # Extract the column as Series
+X_test = pd.read_csv(os.path.join(save_directory, 'X_test.csv'))
+y_test = pd.read_csv(os.path.join(save_directory, 'y_test.csv'))['laneChangeType']  # Extract the column as Series
+
+#saving the data
+save_to_csv(X_train, y_train, data_type='train', save_directory=save_directory)
+save_to_csv(X_val, y_val, data_type='val', save_directory=save_directory)
+save_to_csv(X_test, y_test, data_type='test', save_directory=save_directory)
+
+# Print a confirmation message once all the splits are saved
+print(f"Balanced data splits have been saved in the directory: {save_directory}")
