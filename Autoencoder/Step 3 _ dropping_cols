@@ -1,0 +1,25 @@
+import os
+import pandas as pd
+
+# Directory path
+directory_path = 'data_splits_mC'
+
+# Loop over all files in the directory
+for filename in os.listdir(directory_path):
+    # Check if the file ends with '_features.csv'
+    if filename.endswith('_features.csv'):
+        file_path = os.path.join(directory_path, filename)
+
+        # Read the CSV file into a DataFrame
+        df = pd.read_csv(file_path)
+
+        # Check if 'Latent_Feature_1' and 'Latent_Feature_2' exist in the columns
+        if 'Latent_Feature_1' in df.columns and 'Latent_Feature_2' in df.columns:
+            # Keep only 'Latent_Feature_1' and 'Latent_Feature_2'
+            df = df[['Latent_Feature_1', 'Latent_Feature_2']]
+
+            # Save the modified DataFrame back to a CSV file (overwrite the original)
+            df.to_csv(file_path, index=False)
+            print(f"Updated file: {filename}")
+        else:
+            print(f"Columns 'Latent_Feature_1' and 'Latent_Feature_2' not found in {filename}")
