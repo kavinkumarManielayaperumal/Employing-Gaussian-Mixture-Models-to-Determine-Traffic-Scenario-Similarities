@@ -1,0 +1,207 @@
+import os
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import plotly.express as px  # Import Plotly for interactive plots
+from sklearn.impute import SimpleImputer
+from tensorflow.keras.models import load_model
+from tensorflow.keras.callbacks import ModelCheckpoint
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.losses import Huber
+
+# Function to load the pre-trained model or the latest checkpoint
+def load_existing_model(model_path):
+    if os.path.exists(model_path):
+        print(f"Loading existing model from {model_path}")
+        return load_model(model_path)
+    else:
+        print("Model not found, creating a new one.")
+        return None
+
+# Function to load the list of processed files
+def load_processed_files(processed_files_path):
+    if os.path.exists(processed_files_path):
+        with open(processed_files_path, 'r') as f:
+            processed_files = f.read().splitlines()
+    else:
+        processed_files = []
+    return processed_files
+
+# Function to save the list of processed files
+def save_processed_files(processed_files, processed_files_path):
+    with open(processed_files_path, 'w') as f:
+        f.write("\n".join(processed_files))
+
+# Function to preprocess data (drop unwanted columns, replace categorical with numeric, impute missing values)
+def preprocess_data(file_path, columns_to_drop):
+    # Read the file
+    df = pd.read_csv(file_path)
+
+    # Drop unnecessary columns
+    columns_to_drop = [col for col in columns_to_drop if col in df.columns]
+    df = df.drop(columns=columns_to_drop)
+    #print(f"Input shape: {df.shape}")  # This should print (None, 40)
+
+    # Replace categorical values (e.g., T1, T2, etc.) with numeric values
+    label_encoder = LabelEncoder()
+    if 'time' in df.columns:
+        df['time'] = label_encoder.fit_transform(df['time'].astype(str))
+
+    # Impute missing values with the mean for numeric columns and the most frequent value for categorical ones
+    imputer = SimpleImputer(strategy='mean')
+    df_imputed = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+
+    # Convert to numpy array
+    X = df_imputed.to_numpy().astype(np.float32)
+    print(f"Input shape: {X.shape}")  # This should print (None, 40)
+    return X, df_imputed
+
+# Function to calculate laneChangeType (right = -1, keep lane = 0, left = 1)
+def calculate_lane_change_type(df):
+    # Initialize laneChangeType column
+    lane_change_type = []
+
+    # Iterate over unique ids
+    for vehicle_id in df['id'].unique():
+        vehicle_df = df[df['id'] == vehicle_id]
+
+        # Iterate through rows of each vehicle to calculate laneChangeType
+        prev_lane_id = None
+        for _, row in vehicle_df.iterrows():
+            if prev_lane_id is not None:
+                if row['laneId'] != prev_lane_id:
+                    if row['laneId'] > prev_lane_id:
+                        lane_change_type.append(1)  # Left change
+                    elif row['laneId'] < prev_lane_id:
+                        lane_change_type.append(-1)  # Right change
+                else:
+                    lane_change_type.append(0)  # No change
+            else:
+                lane_change_type.append(0)  # No change for the first row of each id
+
+            prev_lane_id = row['laneId']
+
+    df['laneChangeType'] = lane_change_type
+    return df
+
+# Function to create the autoencoder model (if new)
+def create_autoencoder(input_dim):
+    input_layer = tf.keras.layers.Input(shape=(input_dim,))
+    encoded = tf.keras.layers.Dense(64, activation='sigmoid')(input_layer)
+    encoded = tf.keras.layers.Dense(32, activation='sigmoid')(encoded)
+    encoded = tf.keras.layers.Dense(16, activation='sigmoid')(encoded)
+    latent_space = tf.keras.layers.Dense(2, activation='sigmoid')(encoded)  # Latent space with 2 features
+    decoded = tf.keras.layers.Dense(16, activation='sigmoid')(latent_space)
+    decoded = tf.keras.layers.Dense(32, activation='sigmoid')(decoded)
+    decoded = tf.keras.layers.Dense(input_dim, activation='sigmoid')(decoded)
+    autoencoder = tf.keras.models.Model(inputs=input_layer, outputs=decoded)
+    autoencoder.compile(optimizer='adam', loss=Huber())
+    return autoencoder
+
+# Function to extract latent features (encoded data)
+def extract_latent_features(model, X):
+    encoder = tf.keras.Model(inputs=model.input,
+                             outputs=model.get_layer('dense_3').output)  # Layer with 2 latent features
+    latent_space = encoder.predict(X)
+    return latent_space
+
+# Function to retrain and save the model after each file
+def retrain_model(model, X, epochs=5, batch_size=32):
+    # Save the model at each epoch
+    checkpoint = ModelCheckpoint('Output_for_autoencoder_singlepass/autoencoder_model.keras', save_best_only=False, save_weights_only=False)
+    history = model.fit(X, X, epochs=epochs, batch_size=batch_size, validation_split=0.1, callbacks=[checkpoint])
+    return model, history.history['loss']
+
+# Function to generate and save interactive 3D scatter plot using Plotly
+def plot_3d_interactive(df, file_name):
+    # Create an interactive 3D scatter plot using Plotly
+    fig = px.scatter_3d(df, x='Latent_Feature_1', y='Latent_Feature_2', z='time',
+                        color='laneChangeType', color_continuous_scale='viridis',
+                        labels={'Latent_Feature_1': 'Latent Feature 1',
+                                'Latent_Feature_2': 'Latent Feature 2', 'time': 'Time'},
+                        title=f"Clustering of Latent Features - {file_name}")
+    # Save the plot as an HTML file for interactivity
+    plot_path = file_name.replace(".csv", "_3d_interactive_plot.html")
+    fig.write_html(plot_path)
+    print(f"Interactive 3D plot saved to {plot_path}")
+
+# Function to process files, extract features, and save results
+def process_and_train_model(directory_path, columns_to_drop, processed_files_path='processed_files.txt',
+                            model_path='Output_for_autoencoder_singlepass/autoencoder_model.keras'):
+    # Load or create a model
+    model = load_existing_model(model_path)
+
+    # Load the list of already processed files
+    processed_files = load_processed_files(processed_files_path)
+
+    # If model is None, create a new one using the shape of the data
+    if model is None:
+        sample_file = os.listdir(directory_path)[0]
+        sample_data, _ = preprocess_data(os.path.join(directory_path, sample_file), columns_to_drop)
+        model = create_autoencoder(sample_data.shape[1])
+
+    # Iterate over all files in the directory
+    for file_name in os.listdir(directory_path):
+        if file_name.endswith('.csv') and file_name not in processed_files:
+            print(f"Processing file: {file_name}")
+            file_path = os.path.join(directory_path, file_name)
+
+            # Preprocess the file
+            X, df_imputed = preprocess_data(file_path, columns_to_drop)
+
+            # Calculate laneChangeType
+            df_imputed = calculate_lane_change_type(df_imputed)
+
+            # Extract latent features from the model
+            latent_features = extract_latent_features(model, X)
+
+            # Save latent features (without laneChangeType and time for now)
+            latent_df = pd.DataFrame(latent_features, columns=['Latent_Feature_1', 'Latent_Feature_2'])
+
+            # Standardize the time column
+            df_imputed['time'] = (df_imputed['time'] - df_imputed['time'].mean()) / df_imputed['time'].std()
+
+            # Now append laneChangeType to the latent features dataframe
+            latent_df['time'] = df_imputed['time'].values  # Add standardized time column
+            latent_df['laneChangeType'] = df_imputed['laneChangeType'].values  # Add laneChangeType column
+            latent_df.to_csv(file_name.replace(".csv", "_latent_features_with_time_lane_change.csv"), index=False)
+
+            print(f"Latent features with time and laneChangeType saved to {file_name.replace('.csv', '_latent_features_with_time_lane_change.csv')}")
+
+            # Generate and save the interactive 3D plot
+            plot_3d_interactive(latent_df, file_name)
+
+            # Retrain the model with the new data
+            model, loss_values = retrain_model(model, X, epochs=10, batch_size=32)
+
+            # Save the loss plot
+            loss_plot_path = file_name.replace(".csv", "_loss_plot.png")
+            plt.figure(figsize=(6, 4))
+            plt.plot(loss_values)
+            plt.title(f"Loss Plot for {file_name}")
+            plt.xlabel("Epochs")
+            plt.ylabel("Loss")
+            plt.savefig(loss_plot_path)
+            plt.close()
+
+            # Add the file to processed files list and save it
+            processed_files.append(file_name)
+            save_processed_files(processed_files, processed_files_path)
+
+            print(f"Finished processing {file_name}. Model and loss saved.")
+
+
+directory_path = '.venv/bin/data_files'  # Directory containing CSV files
+columns_to_drop = ['frame', 'x', 'y', 'width_x', 'height_x', 'xVelocity', 'yVelocity', 'xAcceleration',
+                   'yAcceleration', 'frontSightDistance', 'backSightDistance', 'dhw', 'thw', 'ttc',
+                   'precedingXVelocity',
+                   'followingXVelocity', 'precedingId', 'followingId', 'leftPrecedingId', 'leftAlongsideId',
+                   'leftFollowingId',
+                   'rightPrecedingId', 'rightAlongsideId', 'rightFollowingId', 'following_x_velocity', 'width_y',
+                   'height_y',
+                   'initialFrame', 'finalFrame', 'numFrames', 'class', 'drivingDirection', 'traveledDistance',
+                   'minXVelocity',
+                   'maxXVelocity', 'meanXVelocity', 'minDHW', 'minTHW', 'minTTC', 'numLaneChanges', 'vehicle_matrix', 'CumulativeCount']
+
+process_and_train_model(directory_path, columns_to_drop)
