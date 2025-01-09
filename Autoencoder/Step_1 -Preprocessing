@@ -1,0 +1,79 @@
+import pandas as pd
+import os
+from sklearn.model_selection import train_test_split
+
+# Path to the directory containing the CSV files
+directory_path = 'Output_for_autoencoder_singlepass/Autoencoder_latent_files'  # Update with the correct directory path
+
+# Step 1: Load all CSV files in the directory and concatenate them into a single DataFrame
+all_files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+
+# Initialize an empty list to store the DataFrames
+dfs = []
+
+for file in all_files:
+    file_path = os.path.join(directory_path, file)
+    df = pd.read_csv(file_path)
+    dfs.append(df)
+
+# Concatenate all DataFrames into a single DataFrame
+df = pd.concat(dfs, ignore_index=True)
+
+# Step 2: Calculate available counts for laneChangeType 1, -1, and 0
+total_samples = len(df)
+df_pos = df[df['laneChangeType'] == 1]
+df_neg = df[df['laneChangeType'] == -1]
+df_zero = df[df['laneChangeType'] == 0]
+
+# Step 3: Calculate the target size for each class (33% of the total dataset)
+target_size = total_samples // 3  # Target size for each laneChangeType (1, -1, and 0)
+
+# Step 4: Oversample or undersample the classes to balance the dataset
+df_pos_oversampled = df_pos.sample(n=target_size, replace=True, random_state=42)
+df_neg_oversampled = df_neg.sample(n=target_size, replace=True, random_state=42)
+df_zero_undersampled = df_zero.sample(n=target_size, replace=False, random_state=42)
+
+# Step 5: Combine the oversampled/undersampled DataFrames
+df_balanced = pd.concat([df_pos_oversampled, df_neg_oversampled, df_zero_undersampled])
+
+# Step 6: Shuffle the balanced dataset
+df_balanced = df_balanced.sample(frac=1, random_state=42).reset_index(drop=True)
+
+# Step 7: Split the balanced data into train, validation, and test sets
+
+# Calculate 20% of laneChangeType 1 and -1 samples for the test set (similar to the original code)
+df_pos_test = df_pos.sample(n=int(0.2 * len(df_pos)), random_state=42)
+df_neg_test = df_neg.sample(n=int(0.2 * len(df_neg)), random_state=42)
+df_zero_test = df_zero.sample(n=min(len(df_zero), int(0.2 * total_samples)), random_state=42)
+
+# Combine all test samples
+final_test_data = pd.concat([df_pos_test, df_neg_test, df_zero_test])
+
+# Calculate the remaining data for training and validation (excluding test data)
+train_val_data_balanced = df_balanced.drop(final_test_data.index)
+
+# Split the remaining data into 90% training and 10% validation
+X_train_val_balanced = train_val_data_balanced.drop(columns=['laneChangeType'])
+y_train_val_balanced = train_val_data_balanced['laneChangeType']
+X_train_balanced, X_val_balanced, y_train_balanced, y_val_balanced = train_test_split(
+    X_train_val_balanced, y_train_val_balanced, test_size=0.1, random_state=42, stratify=y_train_val_balanced)
+
+# Print the results after balancing and splitting
+print(f"Balanced Training data size: {len(X_train_balanced)}")
+print(f"Balanced Validation data size: {len(X_val_balanced)}")
+print(f"Balanced Test data size: {len(final_test_data)}")
+
+# Save the split data for further use
+save_directory = 'data_splits_mC'
+if not os.path.exists(save_directory):
+    os.makedirs(save_directory)
+
+# Save the datasets to CSV
+X_train_balanced.to_csv(os.path.join(save_directory, 'X_train_balanced.csv'), index=False)
+y_train_balanced.to_csv(os.path.join(save_directory, 'y_train_balanced.csv'), index=False)
+X_val_balanced.to_csv(os.path.join(save_directory, 'X_val_balanced.csv'), index=False)
+y_val_balanced.to_csv(os.path.join(save_directory, 'y_val_balanced.csv'), index=False)
+final_test_data.drop(columns=['laneChangeType']).to_csv(os.path.join(save_directory, 'X_test.csv'), index=False)
+final_test_data['laneChangeType'].to_csv(os.path.join(save_directory, 'y_test.csv'), index=False)
+
+print(f"Balanced data splits have been saved in the directory: {save_directory}")
