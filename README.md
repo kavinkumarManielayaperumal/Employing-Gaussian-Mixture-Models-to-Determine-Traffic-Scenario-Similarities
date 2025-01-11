@@ -49,7 +49,7 @@ The workflow connects every step, from raw data preprocessing to final clusterin
 ## **Setup and Installation**
 To run this project locally, follow the steps below:
 
-### **1. Prerequisites**
+### ** Prerequisites**
 Ensure you have the following installed:
 - Python 3.8+
 - Required libraries (listed in `requirements.txt`):
@@ -60,13 +60,6 @@ Ensure you have the following installed:
   - Scikit-learn
   - Seaborn
 
-### **2. Installation**
-Clone this repository and install the required dependencies:
-```bash
-git clone https://github.com/your-repository-link.git
-cd your-repository-name
-pip install -r requirements.txt
----
 
 ## **Workflow**
 The following steps outline the workflow of this project:
