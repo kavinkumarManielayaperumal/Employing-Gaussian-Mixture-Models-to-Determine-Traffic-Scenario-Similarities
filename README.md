@@ -66,3 +66,44 @@ Clone this repository and install the required dependencies:
 git clone https://github.com/your-repository-link.git
 cd your-repository-name
 pip install -r requirements.txt
+---
+
+## **Workflow**
+The following steps outline the workflow of this project:
+
+### **1. Data Preprocessing:**
+   - **Flipping backward-moving vehicles** for consistency across the two-way highway data.
+   - **Creating a matrix** for the ego vehicle and its surrounding vehicles (up to 8).
+   - **Handling missing values** with ghost vehicles, assigning default values (e.g., `-1` for positions, `0` for velocities).
+
+### **2. Dimensionality Reduction:**
+   - **Applied AutoEncoders** to reduce high-dimensional traffic data into a latent space representation, retaining critical features for clustering.
+
+### **3. Clustering with GMM:**
+   - **Modeled clusters** for lane-change behaviors using the **Expectation-Maximization (EM)** algorithm.
+   - **Handled covariance matrix issues** with regularization techniques, ensuring stability during GMM iterations.
+
+### **4. Visualization:**
+   - **Visualized clusters** and latent space projections for interpretability, enabling the understanding of vehicle behaviors (left, straight, right lane changes).
+
+---
+
+## **Results**
+The GMM successfully clustered vehicle trajectories into three meaningful categories:
+1. **Left Lane Changes**  
+2. **Right Lane Changes**  
+3. **Straight Driving**
+
+### **Key Highlights:**
+- **Addressed singular covariance matrices** with regularization techniques, preventing errors during model iterations.
+- **Dimensionality reduction** significantly improved the GMM’s clustering accuracy, reducing overfitting.
+- **Meaningful 2D visualizations** provided an intuitive understanding of lane-change patterns.
+
+---
+
+## **Future Directions**
+- **Extend the model** to handle temporal dependencies for dynamic traffic predictions and better understanding of lane-change behaviors over time.
+- **Integrate external factors** such as **weather** and **traffic density** for improved robustness in traffic prediction.
+- **Adapt the framework** for **real-time traffic modeling** in autonomous driving systems, allowing for predictive decision-making and safer vehicle behavior analysis.
+
+---
